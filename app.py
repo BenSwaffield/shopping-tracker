@@ -3,6 +3,7 @@ import re
 
 from flask import Flask, render_template, request, g, redirect
 import sqlite3
+import yaml
 
 from azure.ai.documentintelligence import DocumentIntelligenceClient
 from azure.core.credentials import AzureKeyCredential
@@ -51,6 +52,7 @@ def init_db():
                     store_name TEXT,
                     date TEXT,
                     purchaser_name TEXT,
+                    settled BOOLEAN DEFAULT 0,
                     uploaded_at DATETIME NOT NULL
                 );
             ''')
@@ -80,9 +82,13 @@ def home():
         if file:
             image_data = file.read()
             result = call_azure_form_recognizer(image_data)
+            # save to log
+            with open("data/log.txt", "a") as log_file:
+                log_file.write(result.content + "\n\n")
             receipt_data = parse_receipt_data(result)
-            add_receipt_to_db(receipt_data)#
-            return redirect(f"/receipts/{receipt_data.id}")
+            print("Parsed receipt data:", receipt_data)
+            receipt_id = add_receipt_to_db(receipt_data)
+            return redirect(f"/receipts/{receipt_id}")
             # return render_template("receipt_view.html", receipt=receipt_data)
     
     return render_template("index.html")
@@ -119,11 +125,16 @@ def view_receipt_item(id):
         name = request.form.get("name")
         quantity = int(request.form.get("quantity"))
         price_per_item = float(request.form.get("price_per_item"))
+        if request.form.get("share_cost"):
+            share_cost = True
+        else:
+            share_cost = False
         item = ReceiptItem(
             id=int(id),
             name=name,
             quantity=quantity,
-            price_per_item=price_per_item
+            price_per_item=price_per_item,
+            share_cost=share_cost
         )
         update_receipt_item(item)
         return render_template("item.html", item=item)
@@ -242,8 +253,8 @@ def call_azure_form_recognizer(image_data):
 
 
 def parse_receipt_data(result):
-    print(result.content.split("\n")[0].lower())
-    if "aldi" in result.content.split("\n")[0].lower():
+    print("Store: " + result.content.split("\n")[0].lower())
+    if "aldi" in result.content.lower():
         return parse_aldi_receipt_data(result)
     else:
         raise NotImplementedError(
@@ -262,37 +273,71 @@ def parse_aldi_receipt_data(result):
     i += 1  # Move past "GBP"
 
     while i < len(content):
-        print(f"Processing line: {content[i]}")
-        if content[i] == "Subtotal" or content[i] == "Total":
+        try:
+            print(f"Processing line: {content[i]}")
+            if content[i] == "Subtotal" or content[i] == "Total":
+                break
+            if re.search(r"\d+x", content[i].replace(" ", "")):
+                print("Multiple quantity format detected.")
+                receipt_items.append(
+                    ReceiptItem(
+                        name=content[i + 2],
+                        quantity=int(content[i].replace("x", "").strip()),
+                        price_per_item=float(content[i + 1].replace(",", ".")),
+                    )
+                )
+                i += 4
+            else:
+                receipt_items.append(
+                    ReceiptItem(
+                        name=content[i],
+                        quantity=1,
+                        price_per_item=float(content[i + 1].strip().split(" ")[0].replace(",", ".")),
+                    )
+                )
+                i += 2
+            print(f"Added item: {receipt_items[-1]}")
+        except Exception as e:
+            print(f"Error processing line '{content[i]}': {e}")
             break
-        if re.search(r"\d+x", content[i].replace(" ", "")):
-            print("Multiple quantity format detected.")
-            receipt_items.append(
-                ReceiptItem(
-                    name=content[i + 2],
-                    quantity=int(content[i].replace("x", "").strip()),
-                    price_per_item=float(content[i + 1]),
-                )
-            )
-            i += 4
-        else:
-            receipt_items.append(
-                ReceiptItem(
-                    name=content[i],
-                    quantity=1,
-                    price_per_item=float(content[i + 1].strip().split(" ")[0]),
-                )
-            )
-            i += 2
-        print(f"Added item: {receipt_items[-1]}")
 
-    print(receipt_items)
+    # Attempt to find purchaser by card last 4 digits
+    purchaser = "Unknown"
+    for line in content:
+        if "********" in line:
+            strp_line = line.replace(" ", "")
+            i = strp_line.rfind("*")
+            if i == -1:
+                continue
+            card_last4 = strp_line[i + 1 : i + 5]
+            purchaser = match_purchaser_by_card_last4(card_last4)
+            print(f"Matched purchaser: {purchaser} for card ending in {card_last4}")
+            break
+    
+    # Find date
+    date_pattern = re.compile(r"\d\d[.]\d\d[.]\d\d\s*\d\d[:]\d\d")
+    date_found = False
+    for line in content:
+        match = date_pattern.search(line)
+        if match:
+            date_str = match.group(0)
+            date_found = True
+            break
     receipt_data = ReceiptData(
         store_name="Aldi",
-        date="Unknown",
+        date=date_str if date_found else "Unknown",
         items=receipt_items,
+        purchaser=purchaser
     )
     return receipt_data
+
+def match_purchaser_by_card_last4(card_last4):
+    with open("data/config.yaml", "r") as f:
+        config = yaml.safe_load(f)
+    for purchaser in config.get("purchasers", []):
+        if purchaser.get("card_last4") == card_last4:
+            return purchaser.get("name")
+    return "Unknown"
 
 def add_receipt_to_db(receipt_data):
     db = get_db()
@@ -300,7 +345,7 @@ def add_receipt_to_db(receipt_data):
         cursor = db.execute('''
             INSERT INTO receipts (store_name, date, purchaser_name, uploaded_at)
             VALUES (?, ?, ?, datetime('now'))
-        ''', (receipt_data.store_name, receipt_data.date, "Unknown"))
+        ''', (receipt_data.store_name, receipt_data.date, receipt_data.purchaser))
         receipt_id = cursor.lastrowid
 
         for item in receipt_data.items:
@@ -381,7 +426,8 @@ def get_all_receipts() -> list:
             store_name=receipt['store_name'],
             date=receipt['date'],
             items=[],
-            uploaded_at=receipt['uploaded_at']
+            uploaded_at=receipt['uploaded_at'],
+            purchaser=receipt['purchaser_name']
         ) for receipt in receipts
     ]
 
