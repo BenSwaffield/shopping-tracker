@@ -92,8 +92,28 @@ def receipt_page(id):
     print(receipt_data)
     return render_template("receipt_view.html", receipt=receipt_data, items=receipt_data.items)
 
-@app.route("/view/receipt-item/<id>", methods=["GET"])
+@app.route("/receipt-item/<id>/edit", methods=["GET"])
+def edit_receipt_item(id):
+    item = get_receipt_item(id)
+    if item is None:
+        return "Receipt item not found", 404
+    else:
+        return render_template("edit_item.html", item=item)
+
+@app.route("/receipt-item/<id>", methods=["GET", "PUT"])
 def view_receipt_item(id):
+    if request.method == "PUT":
+        name = request.form.get("name")
+        quantity = int(request.form.get("quantity"))
+        price_per_item = float(request.form.get("price_per_item"))
+        item = ReceiptItem(
+            id=int(id),
+            name=name,
+            quantity=quantity,
+            price_per_item=price_per_item
+        )
+        update_receipt_item(item)
+        return render_template("item.html", item=item)
     print(id)
     if id == "new":
         return render_template("item.html", item=ReceiptItem(name="", quantity=1, price_per_item=0.0))

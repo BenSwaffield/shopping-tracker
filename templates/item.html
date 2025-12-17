@@ -1,7 +1,28 @@
-<form>
-<input type="text" value="{{ item.name }}">
-<input type="number" value="{{ item.price_per_item }}">
-<input type="number" value="{{ item.quantity }}">
-<input type="submit" value="Save"><br>
-</form>
-<!-- <li>{{ item.name }} - £{{ item.price_per_item }} - Quantity: {{ item.quantity }}</li> -->
+<!-- Based on https://htmx.org/examples/edit-row/ -->
+<tr>
+      <td>{{ item.name }}</td>
+      <td>{{ item.price_per_item }}</td>
+      <td>{{ item.quantity }}</td>
+      <td>
+        <button class="btn danger"
+                hx-get="/receipt-item/{{ item.id }}/edit"
+                hx-trigger="edit"
+                onClick="let editing = document.querySelector('.editing')
+                         if(editing) {
+                           Swal.fire({title: 'Already Editing',
+                                      showCancelButton: true,
+                                      confirmButtonText: 'Yep, Edit This Row!',
+                                      text:'Hey!  You are already editing a row!  Do you want to cancel that edit and continue?'})
+                           .then((result) => {
+                                if(result.isConfirmed) {
+                                   htmx.trigger(editing, 'cancel')
+                                   htmx.trigger(this, 'edit')
+                                }
+                            })
+                         } else {
+                            htmx.trigger(this, 'edit')
+                         }">
+          Edit
+        </button>
+      </td>
+    </tr>
