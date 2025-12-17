@@ -1,0 +1,10 @@
+<h2>Receipt Details</h2>
+<p><strong>Store Name:</strong> {{ receipt.store_name }}</p>
+<p><strong>Date:</strong> {{ receipt.date }}</p>
+
+<h3>Items Purchased:</h3>
+<div>
+    {% for item in receipt.items %}
+    {% include 'item.html' %}
+    {% endfor %}
+</div>
