@@ -2,9 +2,21 @@
 
 {% block content %}
 <h2>Receipt Details</h2>
-<p><strong>Store Name:</strong> {{ receipt.store_name }}</p>
-<p><strong>Date:</strong> {{ receipt.date }}</p>
 
+<table>
+    <thead>
+    <tr>
+        <th>Store name</th>
+        <th>Date</th>
+        <th>Purchaser</th>
+        <th>Uploaded At</th>
+        <th></th>
+    </tr>
+    </thead>
+    <tbody hx-target="closest tr" hx-swap="outerHTML">
+    {% include 'receipt_details.html' %}
+    </tbody>
+</table>
 <h3>Items Purchased:</h3>
 <!-- Based on https://htmx.org/examples/edit-row/ -->
 <table>
@@ -13,15 +25,16 @@
         <th>Name</th>
         <th>Price per unit</th>
         <th>Quantity</th>
+        <th>Share Cost</th>
         <th></th>
         <th></th>
     </tr>
     </thead>
-    <tbody hx-target="closest tr" hx-swap="outerHTML">
+    <tbody hx-target="closest tr" hx-swap="outerHTML" id="items-tbody">
         {% for item in receipt.items %}
         {% include 'item.html' %}
         {% endfor %}
     </tbody>
 </table>
-<button name="new" hx-get="/receipts-item/{{ receipt.id }}/new" hx-target="tbody" hx-swap="beforeend">Add New Item</button>
+<button name="new" hx-get="/receipts-item/{{ receipt.id }}/new" hx-target="#items-tbody" hx-swap="beforeend">Add New Item</button>
 {% endblock content %}

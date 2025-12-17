@@ -1,14 +1,14 @@
 <!-- Based on https://htmx.org/examples/edit-row/ -->
-<tr hx-trigger='cancel' class='editing' hx-get="/receipt-data/{{ receipt.id }}">
+<tr hx-trigger='cancel' class='editing' hx-get="/receipt-details/{{ receipt.id }}">
   <td><input autofocus name='store_name' value='{{ receipt.store_name }}'></td>
   <td><input name='date' value='{{ receipt.date }}'></td>
   <td><input name='purchaser' value='{{ receipt.purchaser }}'></td>
   <td>{{ receipt.uploaded_at }}</td>
   <td>
-    <button class="btn danger" hx-get="/receipt-data/{{ receipt.id }}">
+    <button class="btn danger" hx-get="/receipt-details/{{ receipt.id }}">
       Cancel
     </button>
-    <button class="btn danger" hx-put="/receipt-data/{{ receipt.id }}" hx-include="closest tr">
+    <button class="btn danger" hx-put="/receipt-details/{{ receipt.id }}" hx-include="closest tr">
       Save
     </button>
   </td>

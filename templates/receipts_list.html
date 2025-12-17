@@ -14,9 +14,9 @@
     </tr>
     </thead>
     <tbody hx-target="closest tr" hx-swap="outerHTML">
-        {% for receipt in receipts %}
+    {% for receipt in receipts %}
         {% include 'receipt.html' %}
-        {% endfor %}
+    {% endfor %}
     </tbody>
 </table>
 <button name="new" hx-get="/receipt-data/new" hx-target="tbody" hx-swap="beforeend">Add New Receipt</button>

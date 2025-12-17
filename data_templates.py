@@ -16,4 +16,5 @@ class ReceiptItem:
     name: str
     quantity: int
     price_per_item: float
+    share_cost: bool = True
     id: int = None

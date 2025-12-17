@@ -59,6 +59,7 @@ def init_db():
                 CREATE TABLE IF NOT EXISTS receipt_items (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     receipt_id INTEGER NOT NULL,
+                    share_cost BOOLEAN DEFAULT 1,
                     item_name TEXT,
                     item_quantity INTEGER,
                     item_cost FLOAT,
@@ -94,7 +95,8 @@ def receipts_list():
 @app.route("/receipts/<id>", methods=["GET"])
 def receipt_page(id):
     receipt_data = get_receipt_data(id)
-    print(receipt_data)
+    if receipt_data is None:
+        return "Receipt not found", 404
     return render_template("receipt_view.html", receipt=receipt_data, items=receipt_data.items)
 
 @app.route("/receipts-item/<receipt_id>/new", methods=["GET"])
@@ -147,7 +149,7 @@ def edit_receipt_data(id):
     if receipt is None:
         return "Receipt not found", 404
     else:
-        return render_template("edit_receipt.html", receipt=receipt)
+        return render_template("edit_receipt_details.html", receipt=receipt)
     
 @app.route("/receipt-data/<id>", methods=["GET", "PUT", "DELETE"])
 def view_receipt_data(id):
@@ -185,6 +187,38 @@ def view_receipt_data(id):
         return "Receipt not found", 404
     else:
         return render_template("receipt.html", receipt=receipt)
+    
+@app.route("/receipt-details/<id>/edit", methods=["GET"])
+def edit_receipt_details(id):
+    receipt = get_receipt_data(id)
+    if receipt is None:
+        return "Receipt not found", 404
+    else:
+        return render_template("edit_receipt_details.html", receipt=receipt)
+
+@app.route("/receipt-details/<id>", methods=["GET", "PUT"])
+def receipt_details(id):
+    if request.method == "PUT":
+        store_name = request.form.get("store_name")
+        date = request.form.get("date")
+        purchaser = request.form.get("purchaser")
+        receipt = get_receipt_data(id)
+        receipt.store_name = store_name
+        receipt.date = date
+        receipt.purchaser = purchaser
+        db = get_db()
+        with db:
+            db.execute('''
+                UPDATE receipts
+                SET store_name = ?, date = ?, purchaser_name = ?
+                WHERE id = ?
+            ''', (receipt.store_name, receipt.date, receipt.purchaser, receipt.id))
+        return render_template("receipt_details.html", receipt=receipt)
+    receipt = get_receipt_data(id)
+    if receipt is None:
+        return "Receipt not found", 404
+    else:
+        return render_template("receipt_details.html", receipt=receipt)
 
 def call_azure_form_recognizer(image_data):
     document_intelligence_client = DocumentIntelligenceClient(
@@ -271,18 +305,18 @@ def add_receipt_to_db(receipt_data):
 
         for item in receipt_data.items:
             db.execute('''
-                INSERT INTO receipt_items (receipt_id, item_name, item_quantity, item_cost)
-                VALUES (?, ?, ?, ?)
-            ''', (receipt_id, item.name, item.quantity, item.price_per_item))
+                INSERT INTO receipt_items (receipt_id, item_name, item_quantity, item_cost, share_cost)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (receipt_id, item.name, item.quantity, item.price_per_item, item.share_cost))
     return receipt_id
 
 def add_receipt_item_to_db(receipt_id, item: ReceiptItem):
     db = get_db()
     with db:
         cursor = db.execute('''
-            INSERT INTO receipt_items (receipt_id, item_name, item_quantity, item_cost)
-            VALUES (?, ?, ?, ?)
-        ''', (receipt_id, item.name, item.quantity, item.price_per_item))
+            INSERT INTO receipt_items (receipt_id, item_name, item_quantity, item_cost, share_cost)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (receipt_id, item.name, item.quantity, item.price_per_item, item.share_cost))
         item_id = cursor.lastrowid
     return item_id
 
@@ -294,7 +328,8 @@ def get_receipt_item(item_id) -> ReceiptItem:
         id=item[0]['id'],
         name=item[0]['item_name'],
         quantity=item[0]['item_quantity'],
-        price_per_item=item[0]['item_cost']
+        price_per_item=item[0]['item_cost'],
+        share_cost=item[0]['share_cost']
     ) if item else None
 
 def update_receipt_item(item: ReceiptItem):
@@ -302,9 +337,9 @@ def update_receipt_item(item: ReceiptItem):
     with db:
         db.execute('''
             UPDATE receipt_items
-            SET item_name = ?, item_quantity = ?, item_cost = ?
+            SET item_name = ?, item_quantity = ?, item_cost = ?, share_cost = ?
             WHERE id = ?
-        ''', (item.name, item.quantity, item.price_per_item, item.id))
+        ''', (item.name, item.quantity, item.price_per_item, item.share_cost, item.id))
 
 def get_receipt_items(receipt_id) -> list:
     items = query_db('''
@@ -315,7 +350,8 @@ def get_receipt_items(receipt_id) -> list:
             id=item['id'],
             name=item['item_name'],
             quantity=item['item_quantity'],
-            price_per_item=item['item_cost']
+            price_per_item=item['item_cost'],
+            share_cost=item['share_cost']
         ) for item in items
     ]
 
@@ -323,6 +359,8 @@ def get_receipt_data(receipt_id) -> ReceiptData:
     receipt = query_db('''
         SELECT * FROM receipts WHERE id = ?
     ''', (receipt_id,), one=True)
+    if receipt is None:
+        return None
     items = get_receipt_items(receipt_id)
     return ReceiptData(
         id=receipt['id'],
