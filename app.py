@@ -433,7 +433,7 @@ def get_all_receipts() -> list:
 
 if __name__ == "__main__":
     init_db()
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=False)
     # print("Reading test image...")
     # image = open("image_20251112154119.jpg", "rb").read()
     # print("Calling Azure Form Recognizer...")
