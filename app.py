@@ -48,7 +48,7 @@ def init_db():
             db.execute('''
                 CREATE TABLE IF NOT EXISTS receipts (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    merchant_name TEXT,
+                    store_name TEXT,
                     date TEXT,
                     purchaser_name TEXT,
                     uploaded_at DATETIME NOT NULL
@@ -86,11 +86,22 @@ def home():
     
     return render_template("index.html")
 
+@app.route("/receipts", methods=["GET"])
+def receipts_list():
+    receipts = get_all_receipts()
+    return render_template("receipts_list.html", receipts=receipts)
+
 @app.route("/receipts/<id>", methods=["GET"])
 def receipt_page(id):
     receipt_data = get_receipt_data(id)
     print(receipt_data)
     return render_template("receipt_view.html", receipt=receipt_data, items=receipt_data.items)
+
+@app.route("/receipts-item/<receipt_id>/new", methods=["GET"])
+def new_receipt_item(receipt_id):
+    item = ReceiptItem(name="", quantity=1, price_per_item=0.0)
+    item.id = add_receipt_item_to_db(receipt_id, item)
+    return render_template("item.html", item=item)
 
 @app.route("/receipt-item/<id>/edit", methods=["GET"])
 def edit_receipt_item(id):
@@ -100,7 +111,7 @@ def edit_receipt_item(id):
     else:
         return render_template("edit_item.html", item=item)
 
-@app.route("/receipt-item/<id>", methods=["GET", "PUT"])
+@app.route("/receipt-item/<id>", methods=["GET", "PUT", "DELETE"])
 def view_receipt_item(id):
     if request.method == "PUT":
         name = request.form.get("name")
@@ -114,6 +125,13 @@ def view_receipt_item(id):
         )
         update_receipt_item(item)
         return render_template("item.html", item=item)
+    elif request.method == "DELETE":
+        db = get_db()
+        with db:
+            db.execute('''
+                DELETE FROM receipt_items WHERE id = ?
+            ''', (id,))
+        return ""
     print(id)
     if id == "new":
         return render_template("item.html", item=ReceiptItem(name="", quantity=1, price_per_item=0.0))
@@ -122,6 +140,51 @@ def view_receipt_item(id):
         return "Receipt item not found", 404
     else:
         return render_template("item.html", item=item)
+
+@app.route("/receipt-data/<id>/edit", methods=["GET"])
+def edit_receipt_data(id):
+    receipt = get_receipt_data(id)
+    if receipt is None:
+        return "Receipt not found", 404
+    else:
+        return render_template("edit_receipt.html", receipt=receipt)
+    
+@app.route("/receipt-data/<id>", methods=["GET", "PUT", "DELETE"])
+def view_receipt_data(id):
+    if id == "new":
+        receipt_id = add_receipt_to_db(ReceiptData(store_name="", date="", items=[]))
+        return render_template("receipt.html", receipt=ReceiptData(id=receipt_id, store_name="", date="", items=[]))
+    if request.method == "PUT":
+        store_name = request.form.get("store_name")
+        date = request.form.get("date")
+        purchaser = request.form.get("purchaser")
+        receipt = get_receipt_data(id)
+        receipt.store_name = store_name
+        receipt.date = date
+        receipt.purchaser = purchaser
+        db = get_db()
+        with db:
+            db.execute('''
+                UPDATE receipts
+                SET store_name = ?, date = ?, purchaser_name = ?
+                WHERE id = ?
+            ''', (receipt.store_name, receipt.date, receipt.purchaser, receipt.id))
+        return render_template("receipt.html", receipt=receipt)
+    elif request.method == "DELETE":
+        db = get_db()
+        with db:
+            db.execute('''
+                DELETE FROM receipt_items WHERE receipt_id = ?
+            ''', (id,))
+            db.execute('''
+                DELETE FROM receipts WHERE id = ?
+            ''', (id,))
+        return ""
+    receipt = get_receipt_data(id)
+    if receipt is None:
+        return "Receipt not found", 404
+    else:
+        return render_template("receipt.html", receipt=receipt)
 
 def call_azure_form_recognizer(image_data):
     document_intelligence_client = DocumentIntelligenceClient(
@@ -150,7 +213,7 @@ def parse_receipt_data(result):
         return parse_aldi_receipt_data(result)
     else:
         raise NotImplementedError(
-            "Receipt parser for this merchant is not implemented."
+            "Receipt parser for this store is not implemented."
         )
 
 
@@ -191,7 +254,7 @@ def parse_aldi_receipt_data(result):
 
     print(receipt_items)
     receipt_data = ReceiptData(
-        merchant_name="Aldi",
+        store_name="Aldi",
         date="Unknown",
         items=receipt_items,
     )
@@ -201,9 +264,9 @@ def add_receipt_to_db(receipt_data):
     db = get_db()
     with db:
         cursor = db.execute('''
-            INSERT INTO receipts (merchant_name, date, purchaser_name, uploaded_at)
+            INSERT INTO receipts (store_name, date, purchaser_name, uploaded_at)
             VALUES (?, ?, ?, datetime('now'))
-        ''', (receipt_data.merchant_name, receipt_data.date, "Unknown"))
+        ''', (receipt_data.store_name, receipt_data.date, "Unknown"))
         receipt_id = cursor.lastrowid
 
         for item in receipt_data.items:
@@ -211,6 +274,17 @@ def add_receipt_to_db(receipt_data):
                 INSERT INTO receipt_items (receipt_id, item_name, item_quantity, item_cost)
                 VALUES (?, ?, ?, ?)
             ''', (receipt_id, item.name, item.quantity, item.price_per_item))
+    return receipt_id
+
+def add_receipt_item_to_db(receipt_id, item: ReceiptItem):
+    db = get_db()
+    with db:
+        cursor = db.execute('''
+            INSERT INTO receipt_items (receipt_id, item_name, item_quantity, item_cost)
+            VALUES (?, ?, ?, ?)
+        ''', (receipt_id, item.name, item.quantity, item.price_per_item))
+        item_id = cursor.lastrowid
+    return item_id
 
 def get_receipt_item(item_id) -> ReceiptItem:
     item = query_db('''
@@ -252,10 +326,26 @@ def get_receipt_data(receipt_id) -> ReceiptData:
     items = get_receipt_items(receipt_id)
     return ReceiptData(
         id=receipt['id'],
-        merchant_name=receipt['merchant_name'],
+        store_name=receipt['store_name'],
         date=receipt['date'],
-        items=items
+        purchaser=receipt['purchaser_name'],
+        items=items,
+        uploaded_at=receipt['uploaded_at']
     )
+
+def get_all_receipts() -> list:
+    receipts = query_db('''
+        SELECT * FROM receipts ORDER BY uploaded_at DESC
+    ''')
+    return [
+        ReceiptData(
+            id=receipt['id'],
+            store_name=receipt['store_name'],
+            date=receipt['date'],
+            items=[],
+            uploaded_at=receipt['uploaded_at']
+        ) for receipt in receipts
+    ]
 
 if __name__ == "__main__":
     init_db()

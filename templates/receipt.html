@@ -1,11 +1,12 @@
 <!-- Based on https://htmx.org/examples/edit-row/ -->
 <tr>
-      <td>{{ item.name }}</td>
-      <td>{{ item.price_per_item }}</td>
-      <td>{{ item.quantity }}</td>
-      <td>
+        <td>{{ receipt.store_name }}</td>
+        <td>{{ receipt.date }}</td>
+        <td>{{ receipt.purchaser }}</td>
+        <td>{{ receipt.uploaded_at }}</td>
+        <td>
         <button class="btn danger"
-                hx-get="/receipt-item/{{ item.id }}/edit"
+                hx-get="/receipt-data/{{ receipt.id }}/edit"
                 hx-trigger="edit"
                 onClick="let editing = document.querySelector('.editing')
                          if(editing) {
@@ -27,7 +28,7 @@
       </td>
       <td>
         <button class="btn danger"
-                hx-delete="/receipt-item/{{ item.id }}"
+                hx-delete="/receipt-data/{{ receipt.id }}"
                 hx-confirm="Are you sure you want to delete this item?"
                 hx-target="closest tr"
                 hx-swap="outerHTML">

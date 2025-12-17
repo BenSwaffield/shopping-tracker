@@ -3,10 +3,12 @@ from dataclasses import dataclass
 
 @dataclass
 class ReceiptData:
-    merchant_name: str
+    store_name: str
     date: str
     items: list
+    purchaser: str = ""
     id: int = None
+    uploaded_at: str = "" 
 
 
 @dataclass

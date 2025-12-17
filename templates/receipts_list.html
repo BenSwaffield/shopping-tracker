@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Receipts</h2>
+<!-- Based on https://htmx.org/examples/edit-row/ -->
+<table>
+    <thead>
+    <tr>
+        <th>Store name</th>
+        <th>Date</th>
+        <th>Purchaser</th>
+        <th>Uploaded At</th>
+        <th></th>
+        <th></th>
+    </tr>
+    </thead>
+    <tbody hx-target="closest tr" hx-swap="outerHTML">
+        {% for receipt in receipts %}
+        {% include 'receipt.html' %}
+        {% endfor %}
+    </tbody>
+</table>
+<button name="new" hx-get="/receipt-data/new" hx-target="tbody" hx-swap="beforeend">Add New Receipt</button>
+{% endblock content %}
